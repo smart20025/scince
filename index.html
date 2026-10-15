@@ -325,6 +325,7 @@ body.lock #login{display:flex}body.lock aside,body.lock main{display:none}
       <button class="btn" id="rg">✨ تحليل وعرض التقرير</button>
       <button class="btn gold" id="rpdf">تصدير PDF</button>
       <button class="btn g" id="rpr">طباعة</button>
+      <button class="btn g" id="rrf">🔄 تحديث البيانات</button>
     </div>
   </div>
   <div id="repw"><div id="rep"><div class="empty">اختر الطالب ثم اضغط «تحليل وعرض التقرير».</div></div></div>
@@ -373,7 +374,12 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const clip=(t,n)=>{t=String(t||'');return t.length>n?t.slice(0,n)+'…':t};
 const MONTHS=['سبتمبر','أكتوبر','نوفمبر','ديسمبر','يناير','فبراير','مارس','أبريل','مايو','يونيو'];
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),2800)}
-function errMsg(e){return e?.code=='permission-denied'?'لا توجد صلاحية، تأكد من تسجيل الدخول ومن قواعد Firestore':e?.code=='unavailable'?'تعذر الاتصال بالإنترنت':'خطأ: '+(e?.code||e?.message||'غير معروف')}
+function errMsg(e){const c=e?.code||'';
+  if(c=='permission-denied')return 'لا توجد صلاحية: تأكد من تسجيل الدخول ومن قواعد Firestore (Rules)';
+  if(c=='not-found')return 'قاعدة Firestore غير موجودة: أنشئها من Firebase Console ثم Firestore Database ثم Create database';
+  if(c=='unavailable'||c=='timeout'||c=='deadline-exceeded')return 'تعذر الوصول لخوادم Firestore: تحقق من الإنترنت، ومن إنشاء قاعدة Firestore في المشروع، وعطّل مانع الإعلانات، وجرّب شبكة أخرى';
+  return 'خطأ: '+(c||e?.message||'غير معروف')}
+const withTO=(p,ms=20000)=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r({code:'timeout'}),ms))]);
 window.addEventListener('unhandledrejection',e=>{console.error(e.reason);toast(errMsg(e.reason))});
 function countUp(el){const to=+el.dataset.n,sf=el.dataset.s||'',d=el.dataset.d!=null?+el.dataset.d:(Number.isInteger(to)?0:1),t0=performance.now();
   (function f(t){const k=Math.min(1,(t-t0)/1400),e=1-Math.pow(1-k,3);el.textContent=(to*e).toFixed(d)+sf;if(k<1)requestAnimationFrame(f)})(t0)}
@@ -382,8 +388,8 @@ const cu=(v,sf='',d)=>v==null?'—':`<span class="cu" data-n="${v}" data-s="${sf
 /* ---------- Firebase فقط ---------- */
 const authMsg=c=>({'auth/invalid-credential':'البريد الإلكتروني أو كلمة المرور غير صحيحة','auth/invalid-email':'صيغة البريد الإلكتروني غير صحيحة','auth/user-not-found':'لا يوجد حساب بهذا البريد','auth/wrong-password':'كلمة المرور غير صحيحة','auth/user-disabled':'هذا الحساب موقوف','auth/too-many-requests':'محاولات كثيرة، انتظر قليلًا ثم أعد المحاولة','auth/network-request-failed':'تحقق من اتصال الإنترنت'}[c]||'تعذر تسجيل الدخول، حاول مرة أخرى');
 async function loadCloud(){
-  for(const c of COLS){const q=await fb.f.getDocs(fb.f.collection(fb.db,c));S[c]=q.docs.map(d=>({...d.data(),id:d.id}))}
-  const st=await fb.f.getDoc(fb.f.doc(fb.db,'settings','main'));S.settings=st.exists()?st.data():{};
+  for(const c of COLS){const q=await withTO(fb.f.getDocs(fb.f.collection(fb.db,c)));S[c]=q.docs.map(d=>({...d.data(),id:d.id}))}
+  const st=await withTO(fb.f.getDoc(fb.f.doc(fb.db,'settings','main')));S.settings=st.exists()?st.data():{};
 }
 async function initDB(){
   if(location.protocol=='file:')$('#lerr').textContent='شغّل الصفحة من Firebase Hosting أو Live Server (وليس بفتح الملف مباشرة) حتى يعمل تسجيل الدخول.';
@@ -392,10 +398,10 @@ async function initDB(){
     const {initializeApp}=await import(B+'firebase-app.js');
     const f=await import(B+'firebase-firestore.js'),au=await import(B+'firebase-auth.js');
     const app=initializeApp(firebaseConfig);
-    fb={f,au,db:f.getFirestore(app),auth:au.getAuth(app)};
+    fb={f,au,db:f.initializeFirestore(app,{experimentalForceLongPolling:true,useFetchStreams:false}),auth:au.getAuth(app)};
     au.onAuthStateChanged(fb.auth,async u=>{
-      if(!u){S={students:[],initial:[],lessons:[],exams:[],settings:{}};$('#lp').value='';$('#rep').innerHTML='';document.body.classList.add('lock');return}
-      try{await loadCloud()}catch(e){console.error(e);toast(errMsg(e))}
+      if(!u){S={students:[],initial:[],lessons:[],exams:[],settings:{}};$('#lp').value='';shownId=null;$('#rep').innerHTML='';document.body.classList.add('lock');return}
+      try{await loadCloud()}catch(e){console.error(e);toast(errMsg(e));$('#mode').dataset.err=errMsg(e)}
       $('#mode').innerHTML=`🟢 متصل بقاعدة البيانات<br><span dir="ltr">${esc(u.email)}</span><br><button class="btn g sm" id="lo" style="margin-top:8px">تسجيل الخروج</button>`;
       $('#lo').onclick=()=>au.signOut(fb.auth);
       $('#rsch').value=S.settings.school||'';$('#rhd').value=S.settings.head||'';
@@ -405,17 +411,18 @@ async function initDB(){
 }
 async function put(c,o){
   const {id,...rest}=o,d=JSON.parse(JSON.stringify(rest));
-  await fb.f.setDoc(fb.f.doc(fb.db,c,String(id)),d);
+  await withTO(fb.f.setDoc(fb.f.doc(fb.db,c,String(id)),d));
   const i=S[c].findIndex(x=>x.id==id);i<0?S[c].push(o):S[c][i]=o;
+  refreshReport();
 }
-async function del(c,id){await fb.f.deleteDoc(fb.f.doc(fb.db,c,String(id)));S[c]=S[c].filter(x=>x.id!=id)}
-async function putSettings(){await fb.f.setDoc(fb.f.doc(fb.db,'settings','main'),JSON.parse(JSON.stringify(S.settings)))}
+async function del(c,id){await withTO(fb.f.deleteDoc(fb.f.doc(fb.db,c,String(id))));S[c]=S[c].filter(x=>x.id!=id);refreshReport()}
+async function putSettings(){await withTO(fb.f.setDoc(fb.f.doc(fb.db,'settings','main'),JSON.parse(JSON.stringify(S.settings))))}
 
 /* ---------- عناصر مشتركة ---------- */
 const classes=()=>[...new Set(S.students.map(s=>s.cls).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
 function fillClass(sel,keep){const v=sel.value;sel.innerHTML=classes().map(c=>`<option>${esc(c)}</option>`).join('')||'<option value="">لا توجد فصول</option>';if(keep&&classes().includes(v))sel.value=v}
 const inClass=c=>S.students.filter(s=>s.cls===c);
-function fillStudents(sel,c){sel.innerHTML=inClass(c).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')||'<option value="">لا يوجد طلاب</option>'}
+function fillStudents(sel,c){const v=sel.value;sel.innerHTML=inClass(c).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')||'<option value="">لا يوجد طلاب</option>';if([...sel.options].some(o=>o.value==v))sel.value=v}
 function refreshAll(){
   ['#ic','#lc','#ec','#rc'].forEach(s=>fillClass($(s),true));
   renderStudents();renderInitial();fillStudents($('#ls'),$('#lc').value);renderLessonsTable();renderExams();fillStudents($('#rs'),$('#rc').value);
@@ -533,7 +540,7 @@ $('#esv').onclick=async()=>{
 
 /* ---------- التقرير ---------- */
 $('#rc').onchange=()=>fillStudents($('#rs'),$('#rc').value);
-$('#rsch').onchange=$('#rhd').onchange=async()=>{S.settings.school=$('#rsch').value.trim();S.settings.head=$('#rhd').value.trim();await putSettings();toast('تم حفظ البيانات')};
+$('#rsch').onchange=$('#rhd').onchange=async()=>{S.settings.school=$('#rsch').value.trim();S.settings.head=$('#rhd').value.trim();await putSettings();refreshReport();toast('تم حفظ البيانات')};
 function rating(p){return p>=85?['ممتاز','#10b981']:p>=70?['جيد جدًا','#06b6d4']:p>=55?['جيد','#3b82f6']:p>=40?['مقبول','#f59e0b']:['يحتاج دعمًا مكثفًا','#f43f5e']}
 function gauge(p,col){const C=314.16,off=C*(1-(p||0)/100);
   return `<svg viewBox="0 0 120 120"><defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${col}"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><circle cx="60" cy="60" r="50" fill="none" stroke="#efeafc" stroke-width="12"/><circle class="gv" cx="60" cy="60" r="50" fill="none" stroke="url(#gg)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}" transform="rotate(-90 60 60)"/></svg>`}
@@ -546,8 +553,10 @@ function lineChart(pts){
   const dots=pts.map((p,i)=>`<g class="dt" style="--d:${(1.1+i*.18).toFixed(2)}s"><circle cx="${X(i)}" cy="${Y(p.p)}" r="6.5" fill="${p.i?'#f43f5e':'#7c3aed'}" stroke="#fff" stroke-width="3"/><text x="${X(i)}" y="${Y(p.p)-13}" font-size="12" font-weight="700" fill="#1e1b4b" text-anchor="middle">${p.p}%</text></g><text x="${X(i)}" y="${H-16}" font-size="11" fill="#6b7280" text-anchor="middle">${esc(p.l)}</text>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;font-family:Cairo,sans-serif;direction:ltr"><defs><linearGradient id="lg1" x1="0" x2="1"><stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#06b6d4"/></linearGradient><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c3aed" stop-opacity=".28"/><stop offset="1" stop-color="#06b6d4" stop-opacity="0"/></linearGradient></defs>${g}${area}${dots}</svg>`;
 }
-function report(anim=true){
-  const id=$('#rs').value,s=stu(id);const R0=$('#rep');
+let shownId=null;
+function refreshReport(){if(!shownId)return;if(stu(shownId))report(false,shownId);else{shownId=null;$('#rep').className='';$('#rep').innerHTML='<div class="empty">اختر الطالب ثم اضغط «تحليل وعرض التقرير».</div>'}}
+function report(anim=true,id=$('#rs').value){
+  const s=stu(id);const R0=$('#rep');
   if(!s){R0.className='';R0.innerHTML='<div class="empty">اختر طالبًا أولًا.</div>';return false}
   const ini=S.initial.find(x=>x.studentId==id);
   const ex=S.exams.filter(x=>x.studentId==id).sort((a,b)=>a.ts-b.ts).map(e=>({...e,p:pct(e.grade,e.max)}));
@@ -574,6 +583,7 @@ function report(anim=true){
   const school=esc(S.settings.school||'برنامج دعم الطلاب الضعاف');
   const date=new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
   const exv=ex.map(e=>e.p),best=exv.length?Math.max(...exv):null,low=exv.length?Math.min(...exv):null;
+  shownId=id;
   R0.className=anim?'anim':'';
   R0.innerHTML=`
   <div class="pg">
@@ -619,6 +629,7 @@ async function showReport(){
   report(true);$('#repw').scrollIntoView({behavior:'smooth',block:'start'});
 }
 $('#rg').onclick=showReport;
+$('#rrf').onclick=async()=>{try{await loadCloud();refreshAll();refreshReport();toast('تم تحديث البيانات من قاعدة البيانات')}catch(e){toast(errMsg(e))}};
 $('#rpr').onclick=()=>{if(!report(false))return toast('اختر الطالب أولًا');setTimeout(()=>print(),250)};
 $('#rpdf').onclick=async()=>{
   const s=stu($('#rs').value);if(!s)return toast('اختر الطالب أولًا');
