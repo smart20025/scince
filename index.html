@@ -8,7 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{--p:#7c3aed;--p2:#a78bfa;--t:#06b6d4;--pk:#ec4899;--y:#fbbf24;--ink:#1e1b4b;--mut:#6b7280;--bg:#f3f1ff;--line:#e6e2f8;--ok:#10b981;--bad:#f43f5e;--g1:linear-gradient(135deg,#7c3aed,#06b6d4)}
 *{box-sizing:border-box;margin:0}
@@ -121,7 +122,7 @@ body.lock #login{display:flex}body.lock aside,body.lock main{display:none}
 #repw{overflow-x:auto;padding:6px 2px 20px}
 #rep{width:794px;margin:0 auto;display:flex;flex-direction:column;gap:26px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 #rep .empty{background:#fff;border-radius:20px}
-.pg{width:794px;min-height:1122px;background:#fff;border-radius:8px;box-shadow:0 24px 60px #4c1d9524;display:flex;flex-direction:column;position:relative;color:var(--ink)}
+.pg{width:794px;min-height:1120px;background:#fff;border-radius:8px;box-shadow:0 24px 60px #4c1d9524;display:flex;flex-direction:column;position:relative;color:var(--ink)}
 .pg+.pg{page-break-before:always;break-before:page}
 .pdf{gap:0!important}.pdf .pg{box-shadow:none;border-radius:0}
 .rhd{position:relative;height:196px;background:linear-gradient(120deg,#4c1d95,#7c3aed 50%,#06b6d4);color:#fff;padding:36px 40px;overflow:hidden;border-radius:8px 8px 0 0}
@@ -156,7 +157,7 @@ body.lock #login{display:flex}body.lock aside,body.lock main{display:none}
 .pl{display:flex;gap:12px;align-items:flex-start;padding:5px 0;font-size:14px;line-height:1.7}
 .nm{flex:0 0 26px;height:26px;border-radius:50%;background:var(--g1);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-top:2px}
 .mutp{color:var(--mut);font-size:14px;padding:6px 0}
-.pf{display:flex;justify-content:space-between;padding:12px 40px;border-top:3px solid transparent;border-image:var(--g1) 1;font-size:11px;color:var(--mut);margin-top:auto}
+.pf{display:flex;justify-content:space-between;padding:12px 40px;border-top:3px solid #a78bfa;font-size:11px;color:var(--mut);margin-top:auto}
 .rhd2{background:linear-gradient(120deg,#4c1d95,#7c3aed 60%,#06b6d4);color:#fff;padding:22px 40px;display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;border-radius:8px 8px 0 0}
 .rhd2 b{font-size:21px;font-weight:900}.rhd2 span{opacity:.9;font-size:13px}
 .lgd{display:flex;gap:16px;font-size:12px;color:var(--mut);margin-top:4px}.lgd i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px}
@@ -167,8 +168,10 @@ body.lock #login{display:flex}body.lock aside,body.lock main{display:none}
 .dist .t{flex:1;background:#f3efff;border-radius:6px}.dist em{width:22px;font-style:normal;color:var(--mut)}
 .ms{display:grid;grid-template-columns:1fr 1fr;gap:9px}.ms div{background:#f5f3ff;border-radius:14px;padding:9px 12px;text-align:center}
 .ms b{font-size:21px;display:block;color:var(--p);font-weight:900}.ms span{font-size:11px;color:var(--mut)}
-#rep table{width:100%;border-collapse:collapse;font-size:12.5px;border:0}
-#rep th{background:var(--ink);color:#fff;padding:8px 11px}#rep td{padding:7px 11px;border-top:1px solid var(--line)}#rep tbody tr:nth-child(even){background:#faf8ff}
+#pdfhost{position:fixed;left:-10000px;top:0;width:794px;display:flex;flex-direction:column;background:#fff;direction:rtl}
+.pdf .rhd,.pdf .rhd2{border-radius:0}
+.pg table{width:100%;border-collapse:collapse;font-size:12.5px;border:0}
+.pg th{background:var(--ink);color:#fff;padding:8px 11px}.pg td{padding:7px 11px;border-top:1px solid var(--line)}.pg tbody tr:nth-child(even){background:#faf8ff}
 .an{list-style:none;padding:0}.an li{position:relative;padding:3px 26px 3px 0;font-size:13.5px;line-height:1.8}
 .an li:before{content:'✔';position:absolute;right:0;color:var(--t);font-weight:900}
 .rec{margin-top:10px;background:linear-gradient(120deg,#fff7e0,#fffbf0);border:1.5px solid var(--y);border-radius:16px;padding:12px 18px;font-size:13.5px;line-height:1.8}
@@ -632,14 +635,23 @@ $('#rg').onclick=showReport;
 $('#rrf').onclick=async()=>{try{await loadCloud();refreshAll();refreshReport();toast('تم تحديث البيانات من قاعدة البيانات')}catch(e){toast(errMsg(e))}};
 $('#rpr').onclick=()=>{if(!report(false))return toast('اختر الطالب أولًا');setTimeout(()=>print(),250)};
 $('#rpdf').onclick=async()=>{
-  const s=stu($('#rs').value);if(!s)return toast('اختر الطالب أولًا');
-  report(false);const el=$('#rep');el.classList.add('pdf');toast('جارٍ تجهيز ملف PDF...');
+  const id=$('#rs').value,s=stu(id);if(!s)return toast('اختر الطالب أولًا');
+  const btn=$('#rpdf');btn.disabled=true;btn.textContent='جارٍ تجهيز PDF...';let host;
   try{
-    await document.fonts.ready;
-    await html2pdf().set({margin:0,filename:`تقرير_${s.name}.pdf`,image:{type:'jpeg',quality:.98},html2canvas:{scale:2,useCORS:true,scrollX:0,scrollY:0,windowWidth:794},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css']}}).from(el).save();
-    toast('تم تصدير التقرير');
-  }catch(e){console.error(e);toast('تعذر تصدير PDF')}
-  el.classList.remove('pdf');
+    report(false,id);await document.fonts.ready;
+    host=document.createElement('div');host.id='pdfhost';host.className='pdf';host.innerHTML=$('#rep').innerHTML;document.body.appendChild(host);
+    await sleep(200);
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'portrait',compress:true});
+    const pgs=[...host.querySelectorAll('.pg')];
+    for(let i=0;i<pgs.length;i++){
+      const c=await html2canvas(pgs[i],{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,windowWidth:794});
+      let w=210,h=c.height/c.width*210;if(h>297){w=210*297/h;h=297}
+      if(i)pdf.addPage();
+      pdf.addImage(c.toDataURL('image/jpeg',.95),'JPEG',(210-w)/2,0,w,h);
+    }
+    pdf.save(`تقرير_${s.name}.pdf`);toast('تم تصدير التقرير');
+  }catch(e){console.error(e);toast('تعذر تصدير PDF: '+(e.message||e))}
+  host?.remove();btn.disabled=false;btn.textContent='تصدير PDF';
 };
 
 /* ---------- الدخول ---------- */
